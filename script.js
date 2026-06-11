@@ -46,52 +46,28 @@ function detectCombo(cards){
   if(!cards||!cards.length) return null;
   const n=cards.length, s=sortHand(cards);
   if(n===1) return {type:ComboType.SINGLE,cards:s,high:cardValue(s[0])};
-
-  if(n===2){
-    const r=s.map(c=>c.rank);
-    if(r[0]===r[1]) return {type:ComboType.PAIR,cards:s,high:cardValue(s[1])};
-  }
-
-  if(n===3){
-    const r=s.map(c=>c.rank);
-    if(r.every(x=>x===r[0])) return {type:ComboType.TRIPLE,cards:s,high:cardValue(s[2])};
-  }
-
-  if(n===4){
-    const r=s.map(c=>c.rank);
-    if(r.every(x=>x===r[0])) return {type:ComboType.FOUR,cards:s,high:cardValue(s[3])};
-  }
-
+  if(n===2){const r=s.map(c=>c.rank);if(r[0]===r[1]) return {type:ComboType.PAIR,cards:s,high:cardValue(s[1])};}
+  if(n===4){const r=s.map(c=>c.rank);if(r.every(x=>x===r[0])) return {type:ComboType.FOUR,cards:s,high:cardValue(s[3])};}
+  if(n===3){const r=s.map(c=>c.rank);if(r.every(x=>x===r[0])) return {type:ComboType.TRIPLE,cards:s,high:cardValue(s[2])};}
+  // Full house: 5 cards = triple + pair
   if(n===5){
-    // Full House: 3+2 (triple + pair)
-    const groups={};
-    s.forEach(c=>{groups[c.rank]=(groups[c.rank]||0)+1;});
-    const counts=Object.values(groups).sort();
-    if(counts.length===2&&counts[0]===2&&counts[1]===3){
-      // high = nilai kartu dari bagian triple
-      const tripleRank=Object.keys(groups).find(r=>groups[r]===3);
+    const freq={};
+    s.forEach(c=>{freq[c.rank]=(freq[c.rank]||0)+1;});
+    const counts=Object.values(freq).sort((a,b)=>b-a);
+    if(counts[0]===3&&counts[1]===2){
+      const tripleRank=Object.entries(freq).find(([,v])=>v===3)[0];
       const tripleCards=s.filter(c=>c.rank===tripleRank);
       const high=cardValue(tripleCards[tripleCards.length-1]);
       return {type:ComboType.FULLHOUSE,cards:s,high};
     }
-    // Straight 5 kartu
-    if(!s.some(c=>c.rank==='2')){
-      const ri=s.map(c=>RANK_VAL[c.rank]);
-      const ok=ri.every((v,i)=>i===0||v===ri[i-1]+1);
-      if(ok&&new Set(s.map(c=>c.rank)).size===5)
-        return {type:ComboType.STRAIGHT,cards:s,high:cardValue(s[4]),len:5};
-    }
   }
-
-  // Straight panjang (>5)
-  if(n>5){
+  if(n>=3){
     if(s.some(c=>c.rank==='2')) return null;
     const ri=s.map(c=>RANK_VAL[c.rank]);
     const ok=ri.every((v,i)=>i===0||v===ri[i-1]+1);
     if(ok&&new Set(s.map(c=>c.rank)).size===n)
       return {type:ComboType.STRAIGHT,cards:s,high:cardValue(s[n-1]),len:n};
   }
-
   return null;
 }
 function canBeat(cur,att){
@@ -99,6 +75,10 @@ function canBeat(cur,att){
   if(cur.type!==att.type) return false;
   if(cur.type===ComboType.STRAIGHT&&cur.len!==att.len) return false;
   return att.high>cur.high;
+}
+// Pair helper exposed for UI label
+function comboLabel(type){
+  return {single:'Single',pair:'Pair',triple:'Triple',fullhouse:'Full House',straight:'Straight',four:'FOUR OF A KIND! 🎉'}[type]||'';
 }
 
 /* ================================================================
@@ -244,21 +224,42 @@ function subscribeRoom(){
     },e=>console.error('snapshot err',e));
 }
 
+// Track which deal we've already animated (by dealStartAt timestamp string)
+let _lastDealAt='';
+// Track if we've already shown winner animation for this game
+let _winnerShown=false;
+
 function onRoomUpdate(data){
   if(data.status==='waiting'){
+    _winnerShown=false;
     renderWaiting(data);
     // Auto start: semua ready & >= 2 pemain & kita host
     const players=Object.values(data.players||{});
     if(players.length>=2 && players.every(p=>p.ready) && data.hostUid===State.myUid){
       doStartGame(data);
     }
+  } else if(data.phase==='dealing'){
+    // Non-host: show deal animation when host sets phase to 'dealing'
+    if(data.hostUid!==State.myUid){
+      const dealAt=data.dealStartAt?.toMillis?.()+'';
+      if(dealAt!==_lastDealAt){
+        _lastDealAt=dealAt;
+        const pCount=Object.keys(data.players||{}).length;
+        playDealAnimation(pCount); // fire-and-forget; game screen will show when status→playing
+      }
+    }
   } else if(data.status==='playing'){
     const cur=document.querySelector('.screen.active');
     if(!cur||cur.id!=='screen-game') showScreen('game');
     renderGame(data);
   } else if(data.status==='ended'){
-    renderRanking(data.rankings||[]);
-    showScreen('ranking');
+    if(!_winnerShown){
+      _winnerShown=true;
+      showWinnerAnimation(data, ()=>{
+        renderRanking(data.rankings||[]);
+        showScreen('ranking');
+      });
+    }
   }
 }
 
@@ -355,9 +356,12 @@ async function leaveRoom(){
    7. GAME START + DEAL ANIMATION
    ================================================================ */
 async function doStartGame(data){
-  if(data.phase==='playing') return; // guard double-start
-  // Lock phase immediately to prevent double calls from multiple clients
-  await db.collection('rooms').doc(State.roomId).update({phase:'dealing'}).catch(()=>{});
+  if(data.phase==='playing'||data.phase==='dealing') return; // guard double-start
+  // Signal ALL clients to show deal animation via Firestore
+  await db.collection('rooms').doc(State.roomId).update({
+    phase:'dealing',
+    dealStartAt:firebase.firestore.FieldValue.serverTimestamp(),
+  }).catch(()=>{});
 
   const deck=shuffleDeck(buildDeck());
   const players=Object.values(data.players);
@@ -381,9 +385,7 @@ async function doStartGame(data){
   }
   const playerOrder=[...activePlayers].sort((a,b)=>(data.players[a]?.seat??99)-(data.players[b]?.seat??99));
 
-  // Show deal animation
-  await playDealAnimation(players.length);
-
+  // Write hands to subcollection (so non-host clients can load after animation)
   const batch=db.batch();
   const roomRef=db.collection('rooms').doc(State.roomId);
   for(const uid of activePlayers){
@@ -393,6 +395,9 @@ async function doStartGame(data){
   for(let seat=0;seat<4;seat++){
     if(!seatToUid[seat]) batch.update(roomRef,{[`ghostHands.seat${seat}`]:hands[seat].length});
   }
+  // Wait for animation (host runs it; non-host triggered by onRoomUpdate detecting 'dealing')
+  await playDealAnimation(players.length);
+
   batch.update(roomRef,{
     status:'playing',phase:'playing',
     currentPlayer:startPlayer,playerOrder,activePlayers,
@@ -400,6 +405,37 @@ async function doStartGame(data){
     lastUpdated:firebase.firestore.FieldValue.serverTimestamp(),
   });
   await batch.commit();
+}
+
+/* ── Winner animation: pause on game screen, show last cards, then callback ── */
+function showWinnerAnimation(data, onDone){
+  // Find winner (first in rankings)
+  const winner=data.rankings?.[0];
+  const winnerName=winner?.name||'Pemain';
+
+  // Show game screen briefly so last played cards are visible
+  showScreen('game');
+
+  // Overlay banner
+  const banner=document.createElement('div');
+  banner.id='winner-banner';
+  banner.style.cssText=`
+    position:fixed;inset:0;z-index:600;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;
+    background:rgba(0,0,0,.72);
+    animation:winner-fade-in .4s ease forwards;
+  `;
+  banner.innerHTML=`
+    <div style="font-size:3.5rem;animation:winner-bounce .6s ease infinite alternate;">🏆</div>
+    <div style="font-family:Georgia,serif;font-size:1.6rem;color:#f5c518;text-align:center;padding:0 1.5rem;">${winnerName}<br><span style="font-size:1rem;color:#fff;font-family:sans-serif;">Keluar sebagai pemenang!</span></div>
+    <div style="color:rgba(255,255,255,.55);font-size:.8rem;margin-top:.5rem;">Layar ranking dalam 4 detik…</div>
+  `;
+  document.body.appendChild(banner);
+
+  setTimeout(()=>{
+    banner.style.animation='winner-fade-out .5s ease forwards';
+    banner.addEventListener('animationend',()=>{banner.remove();onDone();},{once:true});
+  },4000);
 }
 
 /* ── Deal + Shuffle animation ── */
@@ -604,31 +640,19 @@ function renderSelfHand(){
   hnd.innerHTML='';
   State.myHand.forEach((card,idx)=>{
     const el=createCardEl(card);
+    // tap to select
     el.addEventListener('click',()=>toggleSelect(card.id));
+    // drag-to-reorder
     attachDrag(el,idx);
     hnd.appendChild(el);
   });
-
-  // Overlap dinamis: hitung berdasarkan lebar kontainer vs jumlah kartu
-  const n=State.myHand.length;
-  if(n>1){
-    const cardW=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--card-w'))||40;
-    const containerW=hnd.parentElement?.offsetWidth||window.innerWidth;
-    // Sisakan 12px padding di kiri-kanan
-    const available=containerW-24;
-    // Total lebar tanpa overlap
-    const totalNatural=n*cardW;
-    if(totalNatural>available){
-      // Hitung margin negatif yang diperlukan, tapi jangan lebih dari 60% lebar kartu
-      const maxOverlap=Math.floor(cardW*0.55);
-      const needed=Math.ceil((totalNatural-available)/(n-1));
-      const overlap=Math.min(needed,maxOverlap);
-      hnd.querySelectorAll('.card').forEach((c,i)=>{
-        c.style.marginLeft=i===0?'0':`-${overlap}px`;
-      });
-    }
+  if(State.myHand.length>0&&State.myHand.length<=13){
+    // Fan-out overlap for large hands
+    const overlap=Math.max(0,(State.myHand.length-7)*3);
+    hnd.querySelectorAll('.card').forEach((c,i)=>{
+      c.style.marginLeft=i===0?'0':`-${overlap}px`;
+    });
   }
-
   renderComboPreview();
 }
 
@@ -655,35 +679,23 @@ function attachDrag(el,idx){
   // Touch (long-press to drag)
   let touchDragActive=false;
   let touchStartX,touchStartY,touchTimer;
-
   el.addEventListener('touchstart',e=>{
     touchStartX=e.touches[0].clientX;
     touchStartY=e.touches[0].clientY;
-    touchDragActive=false;
     touchTimer=setTimeout(()=>{
       touchDragActive=true;
       el.classList.add('dragging');
-      if(navigator.vibrate) navigator.vibrate(30);
-    },280);
+    },300);
   },{passive:true});
-
   el.addEventListener('touchmove',e=>{
-    const t=e.touches[0];
-    const dx=Math.abs(t.clientX-touchStartX);
-    const dy=Math.abs(t.clientY-touchStartY);
-    if(!touchDragActive){
-      if(dx>8||dy>8) clearTimeout(touchTimer);
-      return;
-    }
+    if(!touchDragActive){clearTimeout(touchTimer);return;}
     e.preventDefault();
+    const t=e.touches[0];
     const target=document.elementFromPoint(t.clientX,t.clientY);
     document.querySelectorAll('.card.drag-over').forEach(c=>c.classList.remove('drag-over'));
     const targetCard=target?.closest('.card');
-    if(targetCard&&targetCard!==el&&targetCard.dataset.idx!=null){
-      targetCard.classList.add('drag-over');
-    }
+    if(targetCard&&targetCard!==el) targetCard.classList.add('drag-over');
   },{passive:false});
-
   el.addEventListener('touchend',e=>{
     clearTimeout(touchTimer);
     if(!touchDragActive){return;}
@@ -691,19 +703,12 @@ function attachDrag(el,idx){
     el.classList.remove('dragging');
     const t=e.changedTouches[0];
     const target=document.elementFromPoint(t.clientX,t.clientY);
-    const targetCard=target?.closest('.card');
+    const targetCard=target?.closest('.card[data-idx]');
     document.querySelectorAll('.card.drag-over').forEach(c=>c.classList.remove('drag-over'));
-    if(targetCard&&targetCard.dataset.idx!=null){
+    if(targetCard){
       const targetIdx=parseInt(targetCard.dataset.idx);
       reorderHand(idx,targetIdx);
     }
-  });
-
-  el.addEventListener('touchcancel',()=>{
-    clearTimeout(touchTimer);
-    touchDragActive=false;
-    el.classList.remove('dragging');
-    document.querySelectorAll('.card.drag-over').forEach(c=>c.classList.remove('drag-over'));
   });
   el.dataset.idx=idx;
 }
@@ -723,8 +728,7 @@ function renderPot(combo){
   pot.innerHTML='';
   if(!combo||!combo.cards?.length){lbl.textContent='';return;}
   combo.cards.forEach(c=>pot.appendChild(createCardEl(c,false)));
-  const names={single:'Single',pair:'Pair',triple:'Triple',fullhouse:'Full House 🃏',straight:'Straight',four:'FOUR OF A KIND! 🎉'};
-  lbl.textContent=names[combo.type]||'';
+  lbl.textContent=comboLabel(combo.type);
 }
 
 function renderComboPreview(){
@@ -740,7 +744,9 @@ function renderComboPreview(){
   }
   lbl.style.display='none';
   sel.forEach(c=>prev.appendChild(createCardEl(c,false)));
-  enablePlay(!!detectCombo(sel));
+  const combo=detectCombo(sel);
+  enablePlay(!!combo);
+  if(combo) document.querySelector('.combo-preview-label').textContent=comboLabel(combo.type);
 }
 
 function renderRanking(rankings){
@@ -757,10 +763,6 @@ function renderRanking(rankings){
       <div class="rank-note">${r.note||''}</div>`;
     list.appendChild(row);
   });
-
-  // Tampilkan/sembunyikan tombol Main Lagi berdasarkan apakah kita masih di room
-  const rematchBtn=document.getElementById('btn-rematch');
-  rematchBtn.classList.toggle('hidden',!State.roomId);
 }
 
 /* ================================================================
@@ -800,59 +802,6 @@ function cancelCombo(){
   renderSelfHand();
 }
 
-/* ── Animasi lempar kartu ke meja tengah ── */
-function animateThrowCards(cards){
-  return new Promise(resolve=>{
-    const pot=document.getElementById('pot-area');
-    const potRect=pot.getBoundingClientRect();
-    const potCX=potRect.left+potRect.width/2;
-    const potCY=potRect.top+potRect.height/2;
-
-    const hand=document.getElementById('hand-bottom');
-    const cardEls=[...hand.querySelectorAll('.card.selected')];
-    if(!cardEls.length){resolve();return;}
-
-    let done=0;
-    cardEls.forEach((el,i)=>{
-      const rect=el.getBoundingClientRect();
-      const startX=rect.left+rect.width/2;
-      const startY=rect.top+rect.height/2;
-
-      // Clone kartu untuk animasi overlay
-      const clone=el.cloneNode(true);
-      clone.style.cssText=`
-        position:fixed;
-        left:${rect.left}px;
-        top:${rect.top}px;
-        width:${rect.width}px;
-        height:${rect.height}px;
-        z-index:800;
-        pointer-events:none;
-        transition:none;
-        margin:0;
-        transform:translateY(-14px);
-      `;
-      document.body.appendChild(clone);
-
-      const dx=potCX-startX;
-      const dy=potCY-startY;
-      const rot=(Math.random()*30-15).toFixed(1);
-      const delay=i*55;
-
-      setTimeout(()=>{
-        clone.style.transition='transform 0.32s cubic-bezier(.25,.8,.25,1), opacity 0.28s ease';
-        clone.style.transform=`translate(${dx}px,${dy}px) rotate(${rot}deg) scale(0.82)`;
-        clone.style.opacity='0.7';
-        clone.addEventListener('transitionend',()=>{
-          clone.remove();
-          done++;
-          if(done>=cardEls.length) resolve();
-        },{once:true});
-      },delay);
-    });
-  });
-}
-
 async function playCards(){
   const sel=State.myHand.filter(c=>State.selected.has(c.id));
   if(!sel.length) return;
@@ -864,9 +813,6 @@ async function playCards(){
   // Disable buttons immediately (optimistic)
   document.getElementById('btn-play').disabled=true;
   document.getElementById('btn-pass').disabled=true;
-
-  // ── Animasi lempar kartu ke meja ──
-  await animateThrowCards(sel);
 
   const newHand=State.myHand.filter(c=>!State.selected.has(c.id));
   const isFour=attempt.type===ComboType.FOUR;
@@ -1011,6 +957,37 @@ function getPlayerName(){
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 /* ================================================================
+   14b. RETURN TO WAITING ROOM AFTER GAME
+   ================================================================ */
+async function returnToWaitingRoom(){
+  if(!State.roomId||!State.myUid) { showScreen('lobby'); return; }
+  _winnerShown=false; _lastDealAt='';
+  State.myHand=[]; State.selected.clear();
+  try{
+    // Reset room to waiting state; keep players, reset ready flags
+    const roomRef=db.collection('rooms').doc(State.roomId);
+    const snap=await roomRef.get();
+    if(!snap.exists){ showScreen('lobby'); return; }
+    const d=snap.data();
+    // Reset all players' ready status
+    const updates={status:'waiting',phase:'ready',currentCombo:null,currentPlayer:null,
+      passCount:0,rankings:[],activePlayers:[],
+      lastUpdated:firebase.firestore.FieldValue.serverTimestamp()};
+    Object.keys(d.players||{}).forEach(uid=>{
+      updates[`players.${uid}.ready`]=false;
+      updates[`players.${uid}.finished`]=false;
+      updates[`players.${uid}.rank`]=null;
+      updates[`players.${uid}.handCount`]=0;
+    });
+    await roomRef.update(updates);
+    // subscribeRoom is still active; onRoomUpdate will switch to waiting screen
+  }catch(e){
+    showToast('Gagal kembali ke room: '+e.message,'error');
+    showScreen('lobby');
+  }
+}
+
+/* ================================================================
    15. EVENT LISTENERS
    ================================================================ */
 document.addEventListener('DOMContentLoaded',()=>{
@@ -1040,37 +1017,10 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('btn-pass').addEventListener('click',passPlay);
   document.getElementById('btn-cancel').addEventListener('click',cancelCombo);
 
-async function rematch(){
-  if(!State.roomId||!State.myUid) return;
-  const data=State.roomData;
-  if(!data) return;
-  // Reset room ke status waiting, reset semua pemain jadi tidak ready & tidak selesai
-  const playerUpdates={};
-  Object.keys(data.players||{}).forEach(uid=>{
-    playerUpdates[`players.${uid}.ready`]=false;
-    playerUpdates[`players.${uid}.finished`]=false;
-    playerUpdates[`players.${uid}.rank`]=null;
-    playerUpdates[`players.${uid}.handCount`]=0;
-  });
-  try{
-    await db.collection('rooms').doc(State.roomId).update({
-      ...playerUpdates,
-      status:'waiting',phase:'ready',
-      currentCombo:null,currentPlayer:null,
-      passCount:0,rankings:[],activePlayers:[],
-      lastAction:'',lastUpdated:firebase.firestore.FieldValue.serverTimestamp(),
-    });
-    showScreen('waiting');
-  }catch(e){showToast('Gagal main lagi: '+e.message,'error');}
-}
-
-  // Ranking
+  // Ranking — go back to the SAME waiting room so players can rematch easily
   document.getElementById('btn-back-lobby').addEventListener('click',()=>{
-    if(State.unsubRoom) State.unsubRoom();
-    State.roomId=null; State.myHand=[]; State.selected.clear();
-    showScreen('lobby');
+    returnToWaitingRoom();
   });
-  document.getElementById('btn-rematch').addEventListener('click', rematch);
 
   // Hide error on input
   ['input-name','input-room-code'].forEach(id=>{
