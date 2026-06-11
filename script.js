@@ -117,25 +117,87 @@ const State = {
 
 /* ================================================================
    3. FIREBASE INIT
+   ─ authReady: Promise yang resolve setelah UID tersedia.
+   ─ Semua action (createRoom, joinRoom) await authReady dulu.
    ================================================================ */
 let db, auth;
+let authReady;      // Promise<uid>
+let resolveAuth;    // resolver-nya
 
 function initFirebase() {
+  // Siapkan promise sebelum init supaya bisa di-await kapan saja
+  authReady = new Promise(res => { resolveAuth = res; });
+
   try {
-    firebase.initializeApp(FIREBASE_CONFIG);
+    // Hindari double-init jika modul dimuat ulang
+    if (!firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
     db   = firebase.firestore();
     auth = firebase.auth();
-    auth.signInAnonymously().then(cred => {
-      State.myUid = cred.user.uid;
-      console.log('[Auth] UID:', State.myUid);
-    }).catch(err => {
-      showToast('Firebase Auth gagal: ' + err.message, 'error');
-      console.error(err);
+
+    // onAuthStateChanged lebih andal daripada .then() pada signInAnonymously
+    // karena Firebase bisa restore sesi yang sudah ada tanpa round-trip baru.
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        State.myUid = user.uid;
+        console.log('[Auth] Signed in, UID:', user.uid);
+        resolveAuth(user.uid);
+        setAuthUI('ready');
+      } else {
+        // Belum login → mulai anonymous sign-in
+        setAuthUI('loading');
+        auth.signInAnonymously().catch(err => {
+          console.error('[Auth] signInAnonymously error:', err);
+          setAuthUI('error', err.message);
+        });
+      }
     });
+
   } catch(e) {
-    console.error('Firebase init error:', e);
-    showToast('Konfigurasi Firebase belum diisi. Lihat script.js bagian atas.', 'error');
+    console.error('[Firebase] Init error:', e);
+    setAuthUI('error', 'Konfigurasi Firebase salah. Periksa FIREBASE_CONFIG di script.js.');
   }
+}
+
+/** Update UI tombol lobby berdasarkan status auth */
+function setAuthUI(status, msg) {
+  const btnCreate = document.getElementById('btn-create');
+  const btnJoin   = document.getElementById('btn-join');
+  const errEl     = document.getElementById('lobby-error');
+
+  if (status === 'loading') {
+    btnCreate.disabled = true;
+    btnJoin.disabled   = true;
+    btnCreate.textContent = '⏳ Menghubungkan…';
+    btnJoin.textContent   = '⏳ Menghubungkan…';
+  } else if (status === 'ready') {
+    btnCreate.disabled = false;
+    btnJoin.disabled   = false;
+    btnCreate.innerHTML = '<span class="btn-icon">⊕</span> Buat Room';
+    btnJoin.innerHTML   = '<span class="btn-icon">⊞</span> Gabung Room';
+    errEl.classList.add('hidden');
+  } else if (status === 'error') {
+    btnCreate.disabled = false;
+    btnJoin.disabled   = false;
+    btnCreate.innerHTML = '<span class="btn-icon">⊕</span> Buat Room';
+    btnJoin.innerHTML   = '<span class="btn-icon">⊞</span> Gabung Room';
+    errEl.textContent = '⚠ Auth error: ' + (msg || 'Tidak diketahui');
+    errEl.classList.remove('hidden');
+  }
+}
+
+/** Helper: tunggu auth selesai, max 10 detik, lalu return uid atau null */
+async function waitForAuth() {
+  const uid = await Promise.race([
+    authReady,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000)),
+  ]).catch(err => {
+    showToast('Koneksi Firebase timeout. Cek koneksi internet & konfigurasi.', 'error');
+    console.error('[Auth] waitForAuth timeout:', err);
+    return null;
+  });
+  return uid;
 }
 
 /* ================================================================
@@ -150,7 +212,8 @@ function generateRoomCode() {
 
 async function createRoom() {
   const name = getPlayerName(); if (!name) return;
-  if (!State.myUid) { showToast('Autentikasi belum selesai, coba lagi.', 'error'); return; }
+  const uid = await waitForAuth();
+  if (!uid) return;  // waitForAuth sudah tampilkan error
 
   const code = generateRoomCode();
   const player = makePlayerObj(State.myUid, name, 0);
@@ -185,7 +248,8 @@ async function joinRoom() {
   const name = getPlayerName(); if (!name) return;
   const code = document.getElementById('input-room-code').value.trim().toUpperCase();
   if (code.length < 4) { showError('Masukkan kode room yang valid.'); return; }
-  if (!State.myUid) { showToast('Autentikasi belum selesai, coba lagi.', 'error'); return; }
+  const uid = await waitForAuth();
+  if (!uid) return;
 
   try {
     const snap = await db.collection('rooms').where('code','==',code).where('status','==','waiting').limit(1).get();
