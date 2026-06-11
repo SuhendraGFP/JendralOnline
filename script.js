@@ -40,21 +40,58 @@ function cardValue(c){ return RANK_VAL[c.rank]*4+SUIT_VAL[c.suit]; }
 function compareCards(a,b){ return cardValue(a)-cardValue(b); }
 function sortHand(cards){ return [...cards].sort(compareCards); }
 
-const ComboType={SINGLE:'single',TRIPLE:'triple',STRAIGHT:'straight',FOUR:'four'};
+const ComboType={SINGLE:'single',PAIR:'pair',TRIPLE:'triple',FULLHOUSE:'fullhouse',STRAIGHT:'straight',FOUR:'four'};
 
 function detectCombo(cards){
   if(!cards||!cards.length) return null;
   const n=cards.length, s=sortHand(cards);
   if(n===1) return {type:ComboType.SINGLE,cards:s,high:cardValue(s[0])};
-  if(n===4){const r=s.map(c=>c.rank);if(r.every(x=>x===r[0])) return {type:ComboType.FOUR,cards:s,high:cardValue(s[3])};}
-  if(n===3){const r=s.map(c=>c.rank);if(r.every(x=>x===r[0])) return {type:ComboType.TRIPLE,cards:s,high:cardValue(s[2])};}
-  if(n>=3){
+
+  if(n===2){
+    const r=s.map(c=>c.rank);
+    if(r[0]===r[1]) return {type:ComboType.PAIR,cards:s,high:cardValue(s[1])};
+  }
+
+  if(n===3){
+    const r=s.map(c=>c.rank);
+    if(r.every(x=>x===r[0])) return {type:ComboType.TRIPLE,cards:s,high:cardValue(s[2])};
+  }
+
+  if(n===4){
+    const r=s.map(c=>c.rank);
+    if(r.every(x=>x===r[0])) return {type:ComboType.FOUR,cards:s,high:cardValue(s[3])};
+  }
+
+  if(n===5){
+    // Full House: 3+2 (triple + pair)
+    const groups={};
+    s.forEach(c=>{groups[c.rank]=(groups[c.rank]||0)+1;});
+    const counts=Object.values(groups).sort();
+    if(counts.length===2&&counts[0]===2&&counts[1]===3){
+      // high = nilai kartu dari bagian triple
+      const tripleRank=Object.keys(groups).find(r=>groups[r]===3);
+      const tripleCards=s.filter(c=>c.rank===tripleRank);
+      const high=cardValue(tripleCards[tripleCards.length-1]);
+      return {type:ComboType.FULLHOUSE,cards:s,high};
+    }
+    // Straight 5 kartu
+    if(!s.some(c=>c.rank==='2')){
+      const ri=s.map(c=>RANK_VAL[c.rank]);
+      const ok=ri.every((v,i)=>i===0||v===ri[i-1]+1);
+      if(ok&&new Set(s.map(c=>c.rank)).size===5)
+        return {type:ComboType.STRAIGHT,cards:s,high:cardValue(s[4]),len:5};
+    }
+  }
+
+  // Straight panjang (>5)
+  if(n>5){
     if(s.some(c=>c.rank==='2')) return null;
     const ri=s.map(c=>RANK_VAL[c.rank]);
     const ok=ri.every((v,i)=>i===0||v===ri[i-1]+1);
     if(ok&&new Set(s.map(c=>c.rank)).size===n)
       return {type:ComboType.STRAIGHT,cards:s,high:cardValue(s[n-1]),len:n};
   }
+
   return null;
 }
 function canBeat(cur,att){
@@ -567,19 +604,31 @@ function renderSelfHand(){
   hnd.innerHTML='';
   State.myHand.forEach((card,idx)=>{
     const el=createCardEl(card);
-    // tap to select
     el.addEventListener('click',()=>toggleSelect(card.id));
-    // drag-to-reorder
     attachDrag(el,idx);
     hnd.appendChild(el);
   });
-  if(State.myHand.length>0&&State.myHand.length<=13){
-    // Fan-out overlap for large hands
-    const overlap=Math.max(0,(State.myHand.length-7)*3);
-    hnd.querySelectorAll('.card').forEach((c,i)=>{
-      c.style.marginLeft=i===0?'0':`-${overlap}px`;
-    });
+
+  // Overlap dinamis: hitung berdasarkan lebar kontainer vs jumlah kartu
+  const n=State.myHand.length;
+  if(n>1){
+    const cardW=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--card-w'))||40;
+    const containerW=hnd.parentElement?.offsetWidth||window.innerWidth;
+    // Sisakan 12px padding di kiri-kanan
+    const available=containerW-24;
+    // Total lebar tanpa overlap
+    const totalNatural=n*cardW;
+    if(totalNatural>available){
+      // Hitung margin negatif yang diperlukan, tapi jangan lebih dari 60% lebar kartu
+      const maxOverlap=Math.floor(cardW*0.55);
+      const needed=Math.ceil((totalNatural-available)/(n-1));
+      const overlap=Math.min(needed,maxOverlap);
+      hnd.querySelectorAll('.card').forEach((c,i)=>{
+        c.style.marginLeft=i===0?'0':`-${overlap}px`;
+      });
+    }
   }
+
   renderComboPreview();
 }
 
@@ -614,7 +663,6 @@ function attachDrag(el,idx){
     touchTimer=setTimeout(()=>{
       touchDragActive=true;
       el.classList.add('dragging');
-      // Haptic feedback jika tersedia
       if(navigator.vibrate) navigator.vibrate(30);
     },280);
   },{passive:true});
@@ -623,12 +671,10 @@ function attachDrag(el,idx){
     const t=e.touches[0];
     const dx=Math.abs(t.clientX-touchStartX);
     const dy=Math.abs(t.clientY-touchStartY);
-    // Batalkan timer jika user scroll (gerak > 8px sebelum drag aktif)
     if(!touchDragActive){
       if(dx>8||dy>8) clearTimeout(touchTimer);
       return;
     }
-    // Drag aktif — cegah scroll halaman
     e.preventDefault();
     const target=document.elementFromPoint(t.clientX,t.clientY);
     document.querySelectorAll('.card.drag-over').forEach(c=>c.classList.remove('drag-over'));
@@ -640,7 +686,7 @@ function attachDrag(el,idx){
 
   el.addEventListener('touchend',e=>{
     clearTimeout(touchTimer);
-    if(!touchDragActive){ return; }
+    if(!touchDragActive){return;}
     touchDragActive=false;
     el.classList.remove('dragging');
     const t=e.changedTouches[0];
@@ -677,7 +723,7 @@ function renderPot(combo){
   pot.innerHTML='';
   if(!combo||!combo.cards?.length){lbl.textContent='';return;}
   combo.cards.forEach(c=>pot.appendChild(createCardEl(c,false)));
-  const names={single:'Single',triple:'Triple',straight:'Straight',four:'FOUR OF A KIND! 🎉'};
+  const names={single:'Single',pair:'Pair',triple:'Triple',fullhouse:'Full House 🃏',straight:'Straight',four:'FOUR OF A KIND! 🎉'};
   lbl.textContent=names[combo.type]||'';
 }
 
@@ -711,6 +757,10 @@ function renderRanking(rankings){
       <div class="rank-note">${r.note||''}</div>`;
     list.appendChild(row);
   });
+
+  // Tampilkan/sembunyikan tombol Main Lagi berdasarkan apakah kita masih di room
+  const rematchBtn=document.getElementById('btn-rematch');
+  rematchBtn.classList.toggle('hidden',!State.roomId);
 }
 
 /* ================================================================
@@ -750,6 +800,59 @@ function cancelCombo(){
   renderSelfHand();
 }
 
+/* ── Animasi lempar kartu ke meja tengah ── */
+function animateThrowCards(cards){
+  return new Promise(resolve=>{
+    const pot=document.getElementById('pot-area');
+    const potRect=pot.getBoundingClientRect();
+    const potCX=potRect.left+potRect.width/2;
+    const potCY=potRect.top+potRect.height/2;
+
+    const hand=document.getElementById('hand-bottom');
+    const cardEls=[...hand.querySelectorAll('.card.selected')];
+    if(!cardEls.length){resolve();return;}
+
+    let done=0;
+    cardEls.forEach((el,i)=>{
+      const rect=el.getBoundingClientRect();
+      const startX=rect.left+rect.width/2;
+      const startY=rect.top+rect.height/2;
+
+      // Clone kartu untuk animasi overlay
+      const clone=el.cloneNode(true);
+      clone.style.cssText=`
+        position:fixed;
+        left:${rect.left}px;
+        top:${rect.top}px;
+        width:${rect.width}px;
+        height:${rect.height}px;
+        z-index:800;
+        pointer-events:none;
+        transition:none;
+        margin:0;
+        transform:translateY(-14px);
+      `;
+      document.body.appendChild(clone);
+
+      const dx=potCX-startX;
+      const dy=potCY-startY;
+      const rot=(Math.random()*30-15).toFixed(1);
+      const delay=i*55;
+
+      setTimeout(()=>{
+        clone.style.transition='transform 0.32s cubic-bezier(.25,.8,.25,1), opacity 0.28s ease';
+        clone.style.transform=`translate(${dx}px,${dy}px) rotate(${rot}deg) scale(0.82)`;
+        clone.style.opacity='0.7';
+        clone.addEventListener('transitionend',()=>{
+          clone.remove();
+          done++;
+          if(done>=cardEls.length) resolve();
+        },{once:true});
+      },delay);
+    });
+  });
+}
+
 async function playCards(){
   const sel=State.myHand.filter(c=>State.selected.has(c.id));
   if(!sel.length) return;
@@ -761,6 +864,9 @@ async function playCards(){
   // Disable buttons immediately (optimistic)
   document.getElementById('btn-play').disabled=true;
   document.getElementById('btn-pass').disabled=true;
+
+  // ── Animasi lempar kartu ke meja ──
+  await animateThrowCards(sel);
 
   const newHand=State.myHand.filter(c=>!State.selected.has(c.id));
   const isFour=attempt.type===ComboType.FOUR;
@@ -934,12 +1040,37 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('btn-pass').addEventListener('click',passPlay);
   document.getElementById('btn-cancel').addEventListener('click',cancelCombo);
 
+async function rematch(){
+  if(!State.roomId||!State.myUid) return;
+  const data=State.roomData;
+  if(!data) return;
+  // Reset room ke status waiting, reset semua pemain jadi tidak ready & tidak selesai
+  const playerUpdates={};
+  Object.keys(data.players||{}).forEach(uid=>{
+    playerUpdates[`players.${uid}.ready`]=false;
+    playerUpdates[`players.${uid}.finished`]=false;
+    playerUpdates[`players.${uid}.rank`]=null;
+    playerUpdates[`players.${uid}.handCount`]=0;
+  });
+  try{
+    await db.collection('rooms').doc(State.roomId).update({
+      ...playerUpdates,
+      status:'waiting',phase:'ready',
+      currentCombo:null,currentPlayer:null,
+      passCount:0,rankings:[],activePlayers:[],
+      lastAction:'',lastUpdated:firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    showScreen('waiting');
+  }catch(e){showToast('Gagal main lagi: '+e.message,'error');}
+}
+
   // Ranking
   document.getElementById('btn-back-lobby').addEventListener('click',()=>{
     if(State.unsubRoom) State.unsubRoom();
     State.roomId=null; State.myHand=[]; State.selected.clear();
     showScreen('lobby');
   });
+  document.getElementById('btn-rematch').addEventListener('click', rematch);
 
   // Hide error on input
   ['input-name','input-room-code'].forEach(id=>{
