@@ -40,45 +40,139 @@ function cardValue(c){ return RANK_VAL[c.rank]*4+SUIT_VAL[c.suit]; }
 function compareCards(a,b){ return cardValue(a)-cardValue(b); }
 function sortHand(cards){ return [...cards].sort(compareCards); }
 
-const ComboType={SINGLE:'single',PAIR:'pair',TRIPLE:'triple',FULLHOUSE:'fullhouse',STRAIGHT:'straight',FOUR:'four'};
+const ComboType={SINGLE:'single',PAIR:'pair',TRIPLE:'triple',FULLHOUSE:'fullhouse',STRAIGHT:'straight',DBLSTRAIGHT:'dblstraight',FOUR:'four'};
+
+// Hirarki tipe — semakin tinggi angka, semakin kuat
+// Full house BISA mengalahkan triple; four of a kind mengalahkan segalanya
+const COMBO_RANK={
+  single:1, pair:2, triple:3, fullhouse:4, straight:5, dblstraight:6, four:99
+};
 
 function detectCombo(cards){
   if(!cards||!cards.length) return null;
   const n=cards.length, s=sortHand(cards);
+
+  // ── 1 kartu ──
   if(n===1) return {type:ComboType.SINGLE,cards:s,high:cardValue(s[0])};
-  if(n===2){const r=s.map(c=>c.rank);if(r[0]===r[1]) return {type:ComboType.PAIR,cards:s,high:cardValue(s[1])};}
-  if(n===4){const r=s.map(c=>c.rank);if(r.every(x=>x===r[0])) return {type:ComboType.FOUR,cards:s,high:cardValue(s[3])};}
-  if(n===3){const r=s.map(c=>c.rank);if(r.every(x=>x===r[0])) return {type:ComboType.TRIPLE,cards:s,high:cardValue(s[2])};}
-  // Full house: 5 cards = triple + pair
+
+  // ── 2 kartu: Pair ──
+  if(n===2){
+    const r=s.map(c=>c.rank);
+    if(r[0]===r[1]) return {type:ComboType.PAIR,cards:s,high:cardValue(s[1])};
+    return null;
+  }
+
+  // ── 3 kartu: Triple ──
+  if(n===3){
+    const r=s.map(c=>c.rank);
+    if(r.every(x=>x===r[0])) return {type:ComboType.TRIPLE,cards:s,high:cardValue(s[2])};
+    return null;
+  }
+
+  // ── 4 kartu: Four of a Kind ATAU Double Straight (2 pasang berurutan: 3344) ──
+  if(n===4){
+    const r=s.map(c=>c.rank);
+    // Four of a kind
+    if(r.every(x=>x===r[0])) return {type:ComboType.FOUR,cards:s,high:cardValue(s[3])};
+    // Double straight: 2 pasang berurutan (mis. 3♠3♥ 4♠4♥)
+    const freq4={};
+    s.forEach(c=>{freq4[c.rank]=(freq4[c.rank]||0)+1;});
+    const ranks4=Object.keys(freq4);
+    if(ranks4.length===2 && Object.values(freq4).every(v=>v===2) && !s.some(c=>c.rank==='2')){
+      const rv=ranks4.map(r=>RANK_VAL[r]).sort((a,b)=>a-b);
+      if(rv[1]-rv[0]===1){
+        const high=cardValue(s[s.length-1]);
+        return {type:ComboType.DBLSTRAIGHT,cards:s,high,len:2};
+      }
+    }
+    return null;
+  }
+
+  // ── 5 kartu: Full House (triple+pair) ATAU Straight (5 berurutan) ──
   if(n===5){
-    const freq={};
-    s.forEach(c=>{freq[c.rank]=(freq[c.rank]||0)+1;});
-    const counts=Object.values(freq).sort((a,b)=>b-a);
-    if(counts[0]===3&&counts[1]===2){
-      const tripleRank=Object.entries(freq).find(([,v])=>v===3)[0];
+    // Full House
+    const freq5={};
+    s.forEach(c=>{freq5[c.rank]=(freq5[c.rank]||0)+1;});
+    const counts5=Object.values(freq5).sort((a,b)=>b-a);
+    if(counts5[0]===3&&counts5[1]===2){
+      const tripleRank=Object.entries(freq5).find(([,v])=>v===3)[0];
       const tripleCards=s.filter(c=>c.rank===tripleRank);
       const high=cardValue(tripleCards[tripleCards.length-1]);
       return {type:ComboType.FULLHOUSE,cards:s,high};
     }
+    // Straight 5 kartu
+    if(!s.some(c=>c.rank==='2')){
+      const ri=s.map(c=>RANK_VAL[c.rank]);
+      const ok=ri.every((v,i)=>i===0||v===ri[i-1]+1);
+      if(ok&&new Set(s.map(c=>c.rank)).size===5)
+        return {type:ComboType.STRAIGHT,cards:s,high:cardValue(s[4]),len:5};
+    }
+    return null;
   }
-  if(n>=3){
+
+  // ── 6 kartu: Double Straight (3 pasang berurutan: 334455) ──
+  if(n===6){
+    const freq6={};
+    s.forEach(c=>{freq6[c.rank]=(freq6[c.rank]||0)+1;});
+    const ranks6=Object.keys(freq6);
+    if(ranks6.length===3 && Object.values(freq6).every(v=>v===2) && !s.some(c=>c.rank==='2')){
+      const rv=ranks6.map(r=>RANK_VAL[r]).sort((a,b)=>a-b);
+      if(rv[1]-rv[0]===1 && rv[2]-rv[1]===1){
+        return {type:ComboType.DBLSTRAIGHT,cards:s,high:cardValue(s[s.length-1]),len:3};
+      }
+    }
+    // Straight 6 kartu
+    if(!s.some(c=>c.rank==='2')){
+      const ri=s.map(c=>RANK_VAL[c.rank]);
+      const ok=ri.every((v,i)=>i===0||v===ri[i-1]+1);
+      if(ok&&new Set(s.map(c=>c.rank)).size===6)
+        return {type:ComboType.STRAIGHT,cards:s,high:cardValue(s[5]),len:6};
+    }
+    return null;
+  }
+
+  // ── 8 kartu: Double Straight 4 pasang (33445566) ──
+  if(n===8){
+    const freq8={};
+    s.forEach(c=>{freq8[c.rank]=(freq8[c.rank]||0)+1;});
+    const ranks8=Object.keys(freq8);
+    if(ranks8.length===4 && Object.values(freq8).every(v=>v===2) && !s.some(c=>c.rank==='2')){
+      const rv=ranks8.map(r=>RANK_VAL[r]).sort((a,b)=>a-b);
+      if(rv[1]-rv[0]===1&&rv[2]-rv[1]===1&&rv[3]-rv[2]===1)
+        return {type:ComboType.DBLSTRAIGHT,cards:s,high:cardValue(s[s.length-1]),len:4};
+    }
+  }
+
+  // ── n>=7: Straight panjang ──
+  if(n>=7){
     if(s.some(c=>c.rank==='2')) return null;
     const ri=s.map(c=>RANK_VAL[c.rank]);
     const ok=ri.every((v,i)=>i===0||v===ri[i-1]+1);
     if(ok&&new Set(s.map(c=>c.rank)).size===n)
       return {type:ComboType.STRAIGHT,cards:s,high:cardValue(s[n-1]),len:n};
   }
+
   return null;
 }
 function canBeat(cur,att){
   if(!cur) return true;
+
+  // Four of a kind mengalahkan semua tipe yang ada di meja
+  if(att.type===ComboType.FOUR) return true;
+  if(cur.type===ComboType.FOUR) return false;
+
+  // Harus tipe yang SAMA
   if(cur.type!==att.type) return false;
-  if(cur.type===ComboType.STRAIGHT&&cur.len!==att.len) return false;
+
+  // Straight & Double Straight: panjang harus sama
+  if((cur.type===ComboType.STRAIGHT||cur.type===ComboType.DBLSTRAIGHT)&&cur.len!==att.len) return false;
+
+  // Nilai lebih tinggi
   return att.high>cur.high;
 }
 // Pair helper exposed for UI label
 function comboLabel(type){
-  return {single:'Single',pair:'Pair',triple:'Triple',fullhouse:'Full House',straight:'Straight',four:'FOUR OF A KIND! 🎉'}[type]||'';
+  return {single:'Single',pair:'Pair',triple:'Triple',fullhouse:'Full House',straight:'Straight',dblstraight:'Double Straight',four:'FOUR OF A KIND! 🎉'}[type]||'';
 }
 
 /* ================================================================
@@ -232,6 +326,8 @@ let _winnerShown=false;
 function onRoomUpdate(data){
   if(data.status==='waiting'){
     _winnerShown=false;
+    const curScreen=document.querySelector('.screen.active');
+    if(!curScreen||curScreen.id!=='screen-waiting') showScreen('waiting');
     renderWaiting(data);
     // Auto start: semua ready & >= 2 pemain & kita host
     const players=Object.values(data.players||{});
@@ -600,14 +696,27 @@ function renderSlot(pos,player,data){
   hnd.innerHTML='';
   const cnt=player.handCount??0;
   if(cnt>0){
-    const st=document.createElement('div');
-    st.className='card-stack';
-    st.appendChild(createFaceDown());
+    const isDesktop=window.innerWidth>=1024;
+    // On desktop show up to 5 face-down cards fanned; on mobile just 1 stack
+    const visible=isDesktop?Math.min(cnt,5):1;
+    const wrap=document.createElement('div');
+    wrap.className='card-stack';
+    // Offset each extra card slightly for fan effect
+    for(let i=0;i<visible;i++){
+      const fd=createFaceDown();
+      if(isDesktop&&visible>1){
+        fd.style.position='absolute';
+        fd.style.top=`${-i*3}px`;
+        fd.style.left=`${i*4}px`;
+        fd.style.zIndex=i;
+      }
+      wrap.appendChild(fd);
+    }
     const b=document.createElement('div');
     b.className='card-count-badge';
     b.textContent=cnt;
-    st.appendChild(b);
-    hnd.appendChild(st);
+    wrap.appendChild(b);
+    hnd.appendChild(wrap);
   }
 }
 
@@ -831,28 +940,35 @@ async function playCards(){
 
   const comboWithOwner={...attempt,playedBy:State.myUid};
 
+  const rankPos=rankings.length+1; // posisi ranking berikutnya
+
   if(isFour){
-    rankings.unshift({uid:State.myUid,name:me.name,note:'Four of a Kind! 🎉'});
+    // Four of a Kind: langsung selesai & dapat rank saat ini
+    rankings.push({uid:State.myUid,name:me.name,note:`Peringkat ${rankPos} — Four of a Kind! 🎉`});
     active=active.filter(u=>u!==State.myUid);
     next=nextPlayer(State.myUid,active,State.roomData.playerOrder);
-    note=`${me.name} menang FOUR OF A KIND!`;
-    batch.update(roomRef,{[`players.${State.myUid}.finished`]:true,[`players.${State.myUid}.rank`]:1});
+    note=`${me.name} FOUR OF A KIND! Peringkat ${rankPos}`;
+    batch.update(roomRef,{[`players.${State.myUid}.finished`]:true,[`players.${State.myUid}.rank`]:rankPos});
   } else if(done){
-    rankings.push({uid:State.myUid,name:me.name,note:`Selesai ke-${rankings.length+1}`});
+    // Kartu habis: dapat ranking sesuai urutan selesai
+    rankings.push({uid:State.myUid,name:me.name,note:`Peringkat ${rankPos}`});
     active=active.filter(u=>u!==State.myUid);
     next=nextPlayer(State.myUid,active,State.roomData.playerOrder);
-    note=`${me.name} menghabiskan kartu!`;
-    batch.update(roomRef,{[`players.${State.myUid}.finished`]:true});
+    note=`${me.name} menghabiskan kartu! Peringkat ${rankPos}`;
+    batch.update(roomRef,{[`players.${State.myUid}.finished`]:true,[`players.${State.myUid}.rank`]:rankPos});
   } else {
     note=`${me.name}: ${attempt.type} (${sel.map(c=>c.rank+c.suit).join(' ')})`;
   }
 
-  if(active.length<=1){
-    if(active.length===1){
-      const lu=active[0];
-      rankings.push({uid:lu,name:State.roomData.players[lu]?.name||'Pemain',note:'Jenderal Terakhir 😈'});
-      batch.update(roomRef,{[`players.${lu}.finished`]:true});
-    }
+  // Game berakhir hanya saat 1 player tersisa (Jenderal Terakhir)
+  if(active.length===1){
+    const lu=active[0];
+    const lastPos=rankings.length+1;
+    rankings.push({uid:lu,name:State.roomData.players[lu]?.name||'Pemain',note:`Peringkat ${lastPos} — Jenderal Terakhir 😈`});
+    batch.update(roomRef,{[`players.${lu}.finished`]:true,[`players.${lu}.rank`]:lastPos});
+    active=[];
+    newStatus='ended';
+  } else if(active.length===0){
     newStatus='ended';
   }
 
@@ -878,8 +994,12 @@ async function passPlay(){
   // If all others passed → new round
   if(newPass>=active.length-1){
     const lastPlayer=data.currentCombo?.playedBy||State.myUid;
+    // Jika lastPlayer sudah selesai (habis kartu), giliran ke player aktif berikutnya
+    const newCurrent=active.includes(lastPlayer)
+      ? lastPlayer
+      : nextPlayer(lastPlayer, active, data.playerOrder);
     await db.collection('rooms').doc(State.roomId).update({
-      currentCombo:null,passCount:0,currentPlayer:lastPlayer,
+      currentCombo:null,passCount:0,currentPlayer:newCurrent,
       lastAction:`${me.name} pass — Putaran baru!`,lastActionPlayer:State.myUid,
       lastUpdated:firebase.firestore.FieldValue.serverTimestamp(),
     });
@@ -976,10 +1096,12 @@ async function returnToWaitingRoom(){
     Object.keys(d.players||{}).forEach(uid=>{
       updates[`players.${uid}.ready`]=false;
       updates[`players.${uid}.finished`]=false;
-      updates[`players.${uid}.rank`]=null;
+      updates[`players.${uid}.rank`]=firebase.firestore.FieldValue.delete();
       updates[`players.${uid}.handCount`]=0;
     });
     await roomRef.update(updates);
+    // Force local screen switch in case snapshot is delayed
+    showScreen('waiting');
     // subscribeRoom is still active; onRoomUpdate will switch to waiting screen
   }catch(e){
     showToast('Gagal kembali ke room: '+e.message,'error');
