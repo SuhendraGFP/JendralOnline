@@ -606,36 +606,58 @@ function attachDrag(el,idx){
   // Touch (long-press to drag)
   let touchDragActive=false;
   let touchStartX,touchStartY,touchTimer;
+
   el.addEventListener('touchstart',e=>{
     touchStartX=e.touches[0].clientX;
     touchStartY=e.touches[0].clientY;
+    touchDragActive=false;
     touchTimer=setTimeout(()=>{
       touchDragActive=true;
       el.classList.add('dragging');
-    },300);
+      // Haptic feedback jika tersedia
+      if(navigator.vibrate) navigator.vibrate(30);
+    },280);
   },{passive:true});
+
   el.addEventListener('touchmove',e=>{
-    if(!touchDragActive){clearTimeout(touchTimer);return;}
-    e.preventDefault();
     const t=e.touches[0];
+    const dx=Math.abs(t.clientX-touchStartX);
+    const dy=Math.abs(t.clientY-touchStartY);
+    // Batalkan timer jika user scroll (gerak > 8px sebelum drag aktif)
+    if(!touchDragActive){
+      if(dx>8||dy>8) clearTimeout(touchTimer);
+      return;
+    }
+    // Drag aktif — cegah scroll halaman
+    e.preventDefault();
     const target=document.elementFromPoint(t.clientX,t.clientY);
     document.querySelectorAll('.card.drag-over').forEach(c=>c.classList.remove('drag-over'));
     const targetCard=target?.closest('.card');
-    if(targetCard&&targetCard!==el) targetCard.classList.add('drag-over');
+    if(targetCard&&targetCard!==el&&targetCard.dataset.idx!=null){
+      targetCard.classList.add('drag-over');
+    }
   },{passive:false});
+
   el.addEventListener('touchend',e=>{
     clearTimeout(touchTimer);
-    if(!touchDragActive){return;}
+    if(!touchDragActive){ return; }
     touchDragActive=false;
     el.classList.remove('dragging');
     const t=e.changedTouches[0];
     const target=document.elementFromPoint(t.clientX,t.clientY);
-    const targetCard=target?.closest('.card[data-idx]');
+    const targetCard=target?.closest('.card');
     document.querySelectorAll('.card.drag-over').forEach(c=>c.classList.remove('drag-over'));
-    if(targetCard){
+    if(targetCard&&targetCard.dataset.idx!=null){
       const targetIdx=parseInt(targetCard.dataset.idx);
       reorderHand(idx,targetIdx);
     }
+  });
+
+  el.addEventListener('touchcancel',()=>{
+    clearTimeout(touchTimer);
+    touchDragActive=false;
+    el.classList.remove('dragging');
+    document.querySelectorAll('.card.drag-over').forEach(c=>c.classList.remove('drag-over'));
   });
   el.dataset.idx=idx;
 }
