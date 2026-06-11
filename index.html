@@ -70,13 +70,6 @@
   </div>
 
   <!-- ===== GAME SCREEN ===== -->
-  <!--
-    STRUKTUR PENTING:
-    #screen-game (flex column, height:100dvh, overflow:hidden)
-      └── .game-wrap  (flex:1, grid 3x3 untuk 4 area pemain + tengah)
-      └── .action-bar (flex-shrink:0, selalu di bawah, tidak kepotong)
-      └── .game-log   (fixed, tidak mempengaruhi layout)
-  -->
   <div id="screen-game" class="screen">
 
     <div class="game-wrap">
@@ -108,7 +101,7 @@
         <div class="opponent-hand vertical" id="hand-right"></div>
       </div>
 
-      <!-- Bottom (self) — hanya tangan, info bar & nama -->
+      <!-- Bottom (self) -->
       <div class="player-area bottom" id="area-bottom">
         <div class="player-info-bar">
           <div class="player-label self" id="label-bottom"></div>
@@ -121,7 +114,7 @@
 
     </div><!-- end game-wrap -->
 
-    <!-- Action bar: SIBLING dari game-wrap, bukan di dalamnya -->
+    <!-- Action bar: SIBLING game-wrap, selalu kelihatan di bawah -->
     <div class="action-bar">
       <div class="combo-preview" id="combo-preview">
         <span class="combo-preview-label">Ketuk kartu untuk pilih…</span>
@@ -136,14 +129,17 @@
 
     <div class="game-log" id="game-log"></div>
 
-  </div><!-- end screen-game -->
+  </div>
 
   <!-- ===== RANKING ===== -->
   <div id="screen-ranking" class="screen">
     <div class="ranking-container">
       <h2 class="ranking-title">🏆 Hasil Akhir</h2>
       <div id="ranking-list" class="ranking-list"></div>
-      <button id="btn-back-lobby" class="btn btn-primary" style="margin-top:2rem;width:100%;">Kembali ke Lobby</button>
+      <div class="ranking-actions">
+        <button id="btn-rematch" class="btn btn-accent hidden">🔄 Main Lagi</button>
+        <button id="btn-back-lobby" class="btn btn-primary">Kembali ke Lobby</button>
+      </div>
     </div>
   </div>
 
