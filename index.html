@@ -56,7 +56,6 @@
       <div class="seats-grid" id="seats-grid"></div>
       <div class="waiting-actions">
         <button id="btn-ready" class="btn btn-primary">Siap!</button>
-        <!-- Tombol mulai hanya muncul untuk host -->
         <button id="btn-start-host" class="btn btn-accent hidden">▶ Mulai Sekarang</button>
         <button id="btn-leave" class="btn btn-ghost">Keluar</button>
       </div>
@@ -66,14 +65,20 @@
 
   <!-- ===== DEAL ANIMATION OVERLAY ===== -->
   <div id="deal-overlay" class="deal-overlay hidden">
-    <div class="deal-deck" id="deal-deck">
-      <!-- kartu-kartu dikocok di sini -->
-    </div>
+    <div class="deal-deck" id="deal-deck"></div>
     <p class="deal-text" id="deal-text">Mengocok kartu…</p>
   </div>
 
   <!-- ===== GAME SCREEN ===== -->
+  <!--
+    STRUKTUR PENTING:
+    #screen-game (flex column, height:100dvh, overflow:hidden)
+      └── .game-wrap  (flex:1, grid 3x3 untuk 4 area pemain + tengah)
+      └── .action-bar (flex-shrink:0, selalu di bawah, tidak kepotong)
+      └── .game-log   (fixed, tidak mempengaruhi layout)
+  -->
   <div id="screen-game" class="screen">
+
     <div class="game-wrap">
 
       <!-- Top -->
@@ -103,33 +108,35 @@
         <div class="opponent-hand vertical" id="hand-right"></div>
       </div>
 
-      <!-- Bottom (self) -->
+      <!-- Bottom (self) — hanya tangan, info bar & nama -->
       <div class="player-area bottom" id="area-bottom">
         <div class="player-info-bar">
           <div class="player-label self" id="label-bottom"></div>
           <div id="turn-indicator" class="turn-indicator hidden">Giliran Anda!</div>
         </div>
-        <!-- Hand dengan drag-to-reorder -->
         <div class="self-hand-wrap">
           <div class="self-hand" id="hand-bottom"></div>
-        </div>
-        <!-- Action bar -->
-        <div class="action-bar">
-          <div class="combo-preview" id="combo-preview">
-            <span class="combo-preview-label">Ketuk kartu untuk pilih…</span>
-            <div id="combo-cards-preview"></div>
-          </div>
-          <div class="action-buttons">
-            <button id="btn-cancel" class="btn btn-ghost" disabled>Batal</button>
-            <button id="btn-pass"   class="btn btn-secondary" disabled>Pass</button>
-            <button id="btn-play"   class="btn btn-primary" disabled>Main!</button>
-          </div>
         </div>
       </div>
 
     </div><!-- end game-wrap -->
+
+    <!-- Action bar: SIBLING dari game-wrap, bukan di dalamnya -->
+    <div class="action-bar">
+      <div class="combo-preview" id="combo-preview">
+        <span class="combo-preview-label">Ketuk kartu untuk pilih…</span>
+        <div id="combo-cards-preview"></div>
+      </div>
+      <div class="action-buttons">
+        <button id="btn-cancel" class="btn btn-ghost" disabled>Batal</button>
+        <button id="btn-pass"   class="btn btn-secondary" disabled>Pass</button>
+        <button id="btn-play"   class="btn btn-primary" disabled>Main!</button>
+      </div>
+    </div>
+
     <div class="game-log" id="game-log"></div>
-  </div>
+
+  </div><!-- end screen-game -->
 
   <!-- ===== RANKING ===== -->
   <div id="screen-ranking" class="screen">
