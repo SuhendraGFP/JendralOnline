@@ -11,7 +11,7 @@
    ─ Buat project di https://console.firebase.google.com/
    ─ Aktifkan: Firestore Database + Anonymous Authentication
    ================================================================ */
-const firebaseConfig = {
+const FIREBASE_CONFIG  = {
   apiKey: "AIzaSyDmvjWxdrpjsX6KXoV6ICVySjqiEiJEuDM",
   authDomain: "jendral-a50ff.firebaseapp.com",
   projectId: "jendral-a50ff",
