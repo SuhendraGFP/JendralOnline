@@ -12,12 +12,13 @@
    ─ Aktifkan: Firestore Database + Anonymous Authentication
    ================================================================ */
 const firebaseConfig = {
-  apiKey:            "AIzaSyDEMO_REPLACE_WITH_YOUR_API_KEY",
-  authDomain:        "your-project.firebaseapp.com",
-  projectId:         "your-project-id",
-  storageBucket:     "your-project.appspot.com",
-  messagingSenderId: "000000000000",
-  appId:             "1:000000000000:web:0000000000000000"
+  apiKey: "AIzaSyDmvjWxdrpjsX6KXoV6ICVySjqiEiJEuDM",
+  authDomain: "jendral-a50ff.firebaseapp.com",
+  projectId: "jendral-a50ff",
+  storageBucket: "jendral-a50ff.firebasestorage.app",
+  messagingSenderId: "159159752383",
+  appId: "1:159159752383:web:62163996db10f5ce73580a",
+  measurementId: "G-YTHVQV1L47"
 };
 
 /* ================================================================
