@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jenderal Online</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Firebase v9 compat -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+</head>
+<body>
+
+  <!-- ===== LOBBY SCREEN ===== -->
+  <div id="screen-lobby" class="screen active">
+    <div class="lobby-container">
+      <div class="logo-wrap">
+        <div class="logo-icon">♠</div>
+        <h1 class="logo-title">Jenderal Online</h1>
+        <p class="logo-sub">Kartu strategi multiplayer · 2–4 pemain</p>
+      </div>
+
+      <div class="lobby-card">
+        <div class="input-group">
+          <label for="input-name">Nama Pemain</label>
+          <input id="input-name" type="text" placeholder="Masukkan nama Anda…" maxlength="16" />
+        </div>
+
+        <div class="btn-row">
+          <button id="btn-create" class="btn btn-primary">
+            <span class="btn-icon">⊕</span> Buat Room
+          </button>
+          <button id="btn-join" class="btn btn-secondary">
+            <span class="btn-icon">⊞</span> Gabung Room
+          </button>
+        </div>
+
+        <div id="join-section" class="join-section hidden">
+          <div class="input-group">
+            <label for="input-room-code">Kode Room</label>
+            <input id="input-room-code" type="text" placeholder="Masukkan 6 digit kode…" maxlength="6" style="text-transform:uppercase;letter-spacing:4px;" />
+          </div>
+          <button id="btn-join-confirm" class="btn btn-accent w-full">Masuk Room</button>
+        </div>
+      </div>
+
+      <p id="lobby-error" class="error-msg hidden"></p>
+    </div>
+  </div>
+
+  <!-- ===== WAITING ROOM SCREEN ===== -->
+  <div id="screen-waiting" class="screen">
+    <div class="waiting-container">
+      <div class="room-header">
+        <div>
+          <div class="room-code-label">Kode Room</div>
+          <div id="display-room-code" class="room-code-display">------</div>
+        </div>
+        <button id="btn-copy-code" class="btn btn-sm" title="Salin kode">⎘ Salin</button>
+      </div>
+
+      <div class="seats-grid" id="seats-grid">
+        <!-- 4 seat cards injected by JS -->
+      </div>
+
+      <div class="waiting-actions">
+        <button id="btn-ready" class="btn btn-primary">Siap!</button>
+        <button id="btn-leave" class="btn btn-ghost">Keluar</button>
+      </div>
+
+      <p id="waiting-status" class="waiting-status">Menunggu pemain bergabung…</p>
+    </div>
+  </div>
+
+  <!-- ===== GAME SCREEN ===== -->
+  <div id="screen-game" class="screen">
+    <div class="game-wrap">
+
+      <!-- Top player -->
+      <div class="player-area top" id="area-top">
+        <div class="player-label" id="label-top"></div>
+        <div class="opponent-hand" id="hand-top"></div>
+      </div>
+
+      <!-- Left player -->
+      <div class="player-area left" id="area-left">
+        <div class="player-label" id="label-left"></div>
+        <div class="opponent-hand vertical" id="hand-left"></div>
+      </div>
+
+      <!-- Center table -->
+      <div class="table-center">
+        <div class="pot-area" id="pot-area">
+          <div class="pot-label">Meja</div>
+          <div class="pot-cards" id="pot-cards"></div>
+          <div id="combo-type-label" class="combo-type-label"></div>
+        </div>
+      </div>
+
+      <!-- Right player -->
+      <div class="player-area right" id="area-right">
+        <div class="player-label" id="label-right"></div>
+        <div class="opponent-hand vertical" id="hand-right"></div>
+      </div>
+
+      <!-- Bottom player (self) -->
+      <div class="player-area bottom" id="area-bottom">
+        <div class="player-info-bar">
+          <div class="player-label self" id="label-bottom"></div>
+          <div id="turn-indicator" class="turn-indicator hidden">Giliran Anda!</div>
+        </div>
+        <div class="self-hand" id="hand-bottom"></div>
+        <div class="action-bar">
+          <div class="combo-preview" id="combo-preview">
+            <span class="combo-preview-label">Pilih kartu untuk combo…</span>
+            <div id="combo-cards-preview"></div>
+          </div>
+          <div class="action-buttons">
+            <button id="btn-cancel" class="btn btn-ghost" disabled>Batal</button>
+            <button id="btn-pass" class="btn btn-secondary" disabled>Pass</button>
+            <button id="btn-play" class="btn btn-primary" disabled>Main!</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end game-wrap -->
+
+    <!-- Log -->
+    <div class="game-log" id="game-log"></div>
+  </div>
+
+  <!-- ===== RANKING SCREEN ===== -->
+  <div id="screen-ranking" class="screen">
+    <div class="ranking-container">
+      <h2 class="ranking-title">🏆 Hasil Akhir</h2>
+      <div id="ranking-list" class="ranking-list"></div>
+      <button id="btn-back-lobby" class="btn btn-primary" style="margin-top:2rem;">Kembali ke Lobby</button>
+    </div>
+  </div>
+
+  <!-- ===== TOAST ===== -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
